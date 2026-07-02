@@ -1,0 +1,98 @@
+{
+  "address": "6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J",
+  "metadata": {
+    "name": "txoracle",
+    "version": "1.5.2",
+    "spec": "0.1.0",
+    "description": "TxODDS TxLINE Data system"
+  },
+  "instructions": [
+    {
+      "name": "audit_trade_result",
+      "discriminator": [50,242,243,5,209,75,76,91],
+      "accounts": [
+        { "name": "payer", "writable": true, "signer": true },
+        { "name": "daily_scores_merkle_roots" }
+      ],
+      "args": [
+        { "name": "terms", "type": { "defined": { "name": "MarketIntentParams" } } },
+        { "name": "fixture_summary", "type": { "defined": { "name": "ScoresBatchSummary" } } },
+        { "name": "main_tree_proof", "type": { "vec": { "defined": { "name": "ProofNode" } } } },
+        { "name": "fixture_proof", "type": { "vec": { "defined": { "name": "ProofNode" } } } },
+        { "name": "stat_a", "type": { "defined": { "name": "StatTerm" } } },
+        { "name": "stat_b", "type": { "option": { "defined": { "name": "StatTerm" } } } },
+        { "name": "ts", "type": "i64" }
+      ]
+    },
+    {
+      "name": "subscribe",
+      "discriminator": [254,28,191,138,156,179,183,53],
+      "accounts": [
+        { "name": "user", "writable": true, "signer": true },
+        { "name": "pricing_matrix" },
+        { "name": "token_mint" },
+        { "name": "user_token_account", "writable": true },
+        { "name": "token_treasury_vault", "writable": true },
+        { "name": "token_treasury_pda", "docs": ["Hold the PDA that owns the vault"] },
+        { "name": "token_program" },
+        { "name": "system_program" },
+        { "name": "associated_token_program" }
+      ],
+      "args": [
+        { "name": "service_level_id", "type": "u16" },
+        { "name": "weeks", "type": "u8" }
+      ]
+    },
+    {
+      "name": "validate_odds",
+      "discriminator": [192,19,91,138,104,100,212,86],
+      "accounts": [ { "name": "daily_odds_merkle_roots" } ],
+      "args": [
+        { "name": "ts", "type": "i64" },
+        { "name": "odds_snapshot", "type": { "defined": { "name": "Odds" } } },
+        { "name": "summary", "type": { "defined": { "name": "OddsBatchSummary" } } },
+        { "name": "sub_tree_proof", "type": { "vec": { "defined": { "name": "ProofNode" } } } },
+        { "name": "main_tree_proof", "type": { "vec": { "defined": { "name": "ProofNode" } } } }
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "validate_stat",
+      "discriminator": [107,197,232,90,191,136,105,185],
+      "accounts": [ { "name": "daily_scores_merkle_roots" } ],
+      "args": [
+        { "name": "ts", "type": "i64" },
+        { "name": "fixture_summary", "type": { "defined": { "name": "ScoresBatchSummary" } } },
+        { "name": "fixture_proof", "type": { "vec": { "defined": { "name": "ProofNode" } } } },
+        { "name": "main_tree_proof", "type": { "vec": { "defined": { "name": "ProofNode" } } } },
+        { "name": "predicate", "type": { "defined": { "name": "TraderPredicate" } } },
+        { "name": "stat_a", "type": { "defined": { "name": "StatTerm" } } },
+        { "name": "stat_b", "type": { "option": { "defined": { "name": "StatTerm" } } } },
+        { "name": "op", "type": { "option": { "defined": { "name": "BinaryExpression" } } } }
+      ],
+      "returns": "bool"
+    }
+  ],
+  "types": [
+    { "name": "BinaryExpression", "type": { "kind": "enum", "variants": [ { "name": "Add" }, { "name": "Subtract" } ] } },
+    { "name": "Comparison", "type": { "kind": "enum", "variants": [ { "name": "GreaterThan" }, { "name": "LessThan" }, { "name": "EqualTo" } ] } },
+    { "name": "TraderPredicate", "type": { "kind": "struct", "fields": [ { "name": "threshold", "type": "i32" }, { "name": "comparison", "type": { "defined": { "name": "Comparison" } } } ] } },
+    { "name": "ProofNode", "type": { "kind": "struct", "fields": [ { "name": "hash", "type": { "array": ["u8", 32] } }, { "name": "is_right_sibling", "type": "bool" } ] } },
+    { "name": "ScoreStat", "type": { "kind": "struct", "fields": [ { "name": "key", "type": "u32" }, { "name": "value", "type": "i32" }, { "name": "period", "type": "i32" } ] } },
+    { "name": "StatTerm", "type": { "kind": "struct", "fields": [ { "name": "stat_to_prove", "type": { "defined": { "name": "ScoreStat" } } }, { "name": "event_stat_root", "type": { "array": ["u8", 32] } }, { "name": "stat_proof", "type": { "vec": { "defined": { "name": "ProofNode" } } } } ] } },
+    { "name": "ScoresUpdateStats", "type": { "kind": "struct", "fields": [ { "name": "update_count", "type": "i32" }, { "name": "min_timestamp", "type": "i64" }, { "name": "max_timestamp", "type": "i64" } ] } },
+    { "name": "ScoresBatchSummary", "type": { "kind": "struct", "fields": [ { "name": "fixture_id", "type": "i64" }, { "name": "update_stats", "type": { "defined": { "name": "ScoresUpdateStats" } } }, { "name": "events_sub_tree_root", "type": { "array": ["u8", 32] } } ] } },
+    { "name": "MarketIntentParams", "type": { "kind": "struct", "fields": [ { "name": "fixture_id", "type": "i64" }, { "name": "period", "type": "u16" }, { "name": "stat_a_key", "type": "u32" }, { "name": "stat_b_key", "type": { "option": "u32" } }, { "name": "predicate", "type": { "defined": { "name": "TraderPredicate" } } }, { "name": "op", "type": { "option": { "defined": { "name": "BinaryExpression" } } } }, { "name": "negation", "type": "bool" } ] } },
+    { "name": "Odds", "type": { "kind": "struct", "fields": [ { "name": "fixture_id", "type": "i64" }, { "name": "message_id", "type": "string" }, { "name": "ts", "type": "i64" }, { "name": "bookmaker", "type": "string" }, { "name": "bookmaker_id", "type": "i32" }, { "name": "super_odds_type", "type": "string" }, { "name": "game_state", "type": { "option": "string" } }, { "name": "in_running", "type": "bool" }, { "name": "market_parameters", "type": { "option": "string" } }, { "name": "market_period", "type": { "option": "string" } }, { "name": "price_names", "type": { "vec": "string" } }, { "name": "prices", "type": { "vec": "i32" } } ] } },
+    { "name": "OddsUpdateStats", "type": { "kind": "struct", "fields": [ { "name": "update_count", "type": "u32" }, { "name": "min_timestamp", "type": "i64" }, { "name": "max_timestamp", "type": "i64" } ] } },
+    { "name": "OddsBatchSummary", "type": { "kind": "struct", "fields": [ { "name": "fixture_id", "type": "i64" }, { "name": "update_stats", "type": { "defined": { "name": "OddsUpdateStats" } } }, { "name": "odds_sub_tree_root", "type": { "array": ["u8", 32] } } ] } }
+  ],
+  "constants": [
+    { "name": "BACKEND_ADMIN_PUBKEY", "type": "pubkey", "value": "Ah5xwzHxRYBBV3BWHDCHdfzQJfBehzGQcc7A9QX1DLUB" },
+    { "name": "TXLINE_MINT", "type": "pubkey", "value": "4Zao8ocPhmMgq7PdsYWyxvqySMGx7xb9cMftPMkEokRG" },
+    { "name": "USDT_MINT", "type": "pubkey", "value": "ELWTKspHKCnCfCiCiqYw1EDH77k8VCP74dK9qytG2Ujh" },
+    { "name": "TOKEN_DECIMALS", "type": "u32", "value": "6" },
+    { "name": "SUBSCRIPTION_DURATION", "type": "i64", "value": "3600" }
+  ],
+  "_IMPORTANT": "This is a TRIMMED subset of the full IDL you pasted (kept: subscribe + validate_odds + validate_stat + audit_trade_result + supporting types, for the World Cup free-tier + live-odds-reading server flow). Before wiring up claim/trade/settle features, paste your FULL IDL JSON over this file verbatim — otherwise Anchor's Program client will throw 'instruction not found' for anything not listed here."
+}
