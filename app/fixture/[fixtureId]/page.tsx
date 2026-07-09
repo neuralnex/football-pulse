@@ -1,5 +1,7 @@
 import FixtureDashboard from './FixtureDashboard';
 import { getFixtureById } from '@/lib/txline/fixtures';
+import { getScoreSnapshot } from '@/lib/txline/scores';
+import { isSoccerLive } from '@/lib/txline/gameState';
 
 export default async function FixturePage({
   params,
@@ -27,11 +29,21 @@ export default async function FixturePage({
     }
   }
 
+  let isPulse = false;
+  try {
+    const scores = await getScoreSnapshot(Number(fixtureId));
+    const latest = Array.isArray(scores) && scores.length > 0 ? scores[scores.length - 1] : null;
+    isPulse = isSoccerLive(latest?.gameState);
+  } catch {
+
+  }
+
   return (
     <FixtureDashboard
       fixtureId={fixtureId}
       homeTeam={homeTeam ?? 'Home'}
       awayTeam={awayTeam ?? 'Away'}
+      isPulse={isPulse}
     />
   );
 }

@@ -1,19 +1,27 @@
-// lib/txline/parser.ts
-//
-// UNVERIFIED SCHEMA WARNING: field names below (PriceNames, Pct, GameState)
-// are carried over from the original draft and haven't been confirmed
-// against the live API Reference response for /api/odds/updates/{fixtureId}.
-// The IDL's on-chain `Odds` type uses price_names + integer prices, which
-// doesn't match 1:1 — treat this as a best-effort adapter and verify
-// against a real response before shipping.
-
 export interface RawOddsPayload {
   FixtureId: number;
+  MessageId: string;
   Ts: number;
+  Bookmaker: string;
+  BookmakerId: number;
+  SuperOddsType: string;
   GameState?: string;
   InRunning: boolean;
+  MarketParameters?: string;
+  MarketPeriod?: string;
   PriceNames?: string[];
+  Prices?: number[];
   Pct?: string[];
+}
+
+export interface OddsMarketView {
+  bookmaker: string;
+  marketType: string;
+  marketPeriod: string;
+  gameState: string;
+  inRunning: boolean;
+  selections: Array<{ name: string; price: number | null; pct: number | null }>;
+  timestamp: number;
 }
 
 export interface NormalizedMatchState {
@@ -21,21 +29,58 @@ export interface NormalizedMatchState {
   timestamp: number;
   gameState: string;
   isLive: boolean;
+  bookmaker: string | null;
   probabilities: {
     homeWin: number;
     draw: number;
     awayWin: number;
   } | null;
+  markets: OddsMarketView[];
+}
+
+const FINISHED_STATES = new Set(['F', 'FET', 'FPE', 'A', 'C', 'TXCC', 'TXCS', 'P', 'END']);
+const ACTIVE_STATES = new Set(['H1', 'HT', 'H2', 'WET', 'ET1', 'HTET', 'ET2', 'WPE', 'PE', 'LIVE', 'I']);
+
+function safePct(val: string | undefined): number | null {
+  if (!val || val === 'NA') return null;
+  const parsed = parseFloat(val);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isMatchWinnerMarket(payload: RawOddsPayload): boolean {
+  const names = payload.PriceNames ?? [];
+  return names.includes('1') && names.includes('2');
+}
+
+function toMarketView(payload: RawOddsPayload): OddsMarketView {
+  const names = payload.PriceNames ?? [];
+  const prices = payload.Prices ?? [];
+  const pcts = payload.Pct ?? [];
+
+  return {
+    bookmaker: payload.Bookmaker,
+    marketType: payload.SuperOddsType,
+    marketPeriod: payload.MarketPeriod ?? '—',
+    gameState: payload.GameState ?? '—',
+    inRunning: payload.InRunning,
+    timestamp: payload.Ts,
+    selections: names.map((name, i) => ({
+      name,
+      price: prices[i] ?? null,
+      pct: safePct(pcts[i]),
+    })),
+  };
 }
 
 export class TxLineDataParser {
-  public static parseLiveOdds(payloads: RawOddsPayload[]): NormalizedMatchState {
-    if (!payloads || payloads.length === 0) {
+  public static parseOddsPayloads(payloads: RawOddsPayload[]): NormalizedMatchState {
+    if (!payloads?.length) {
       throw new Error('Empty odds payload — nothing to parse.');
     }
 
     const mainMarket =
-      payloads.find(p => p.PriceNames?.includes('1') && p.PriceNames?.includes('2')) ??
+      payloads.find((p) => isMatchWinnerMarket(p) && p.InRunning) ??
+      payloads.find(isMatchWinnerMarket) ??
       payloads[0];
 
     let probabilities: NormalizedMatchState['probabilities'] = null;
@@ -45,53 +90,35 @@ export class TxLineDataParser {
       const drawIdx = mainMarket.PriceNames.indexOf('X');
       const awayIdx = mainMarket.PriceNames.indexOf('2');
 
-      const safeParseFloat = (val: string | undefined): number => {
-        if (!val || val === 'NA') return 0.0;
-        const parsed = parseFloat(val);
-        return Number.isFinite(parsed) ? parsed : 0.0;
-      };
-
       probabilities = {
-        homeWin: homeIdx !== -1 ? safeParseFloat(mainMarket.Pct[homeIdx]) : 0,
-        draw: drawIdx !== -1 ? safeParseFloat(mainMarket.Pct[drawIdx]) : 0,
-        awayWin: awayIdx !== -1 ? safeParseFloat(mainMarket.Pct[awayIdx]) : 0,
+        homeWin: homeIdx !== -1 ? safePct(mainMarket.Pct[homeIdx]) ?? 0 : 0,
+        draw: drawIdx !== -1 ? safePct(mainMarket.Pct[drawIdx]) ?? 0 : 0,
+        awayWin: awayIdx !== -1 ? safePct(mainMarket.Pct[awayIdx]) ?? 0 : 0,
       };
     }
 
-    const gameState = (mainMarket.GameState || 'PRE_MATCH').toUpperCase();
-    const finishedStates = new Set([
-      'F',
-      'FET',
-      'FPE',
-      'A',
-      'C',
-      'TXCC',
-      'TXCS',
-      'P',
-    ]);
-    const activeStates = new Set([
-      'H1',
-      'HT',
-      'H2',
-      'WET',
-      'ET1',
-      'HTET',
-      'ET2',
-      'WPE',
-      'PE',
-      'LIVE',
-    ]);
-
-    const isLive = finishedStates.has(gameState)
+    const gameState = (mainMarket.GameState || 'NS').toUpperCase();
+    const isLive = FINISHED_STATES.has(gameState)
       ? false
-      : mainMarket.InRunning || activeStates.has(gameState);
+      : mainMarket.InRunning || ACTIVE_STATES.has(gameState);
+
+    const markets = payloads
+      .filter(isMatchWinnerMarket)
+      .slice(0, 5)
+      .map(toMarketView);
 
     return {
       fixtureId: mainMarket.FixtureId,
       timestamp: mainMarket.Ts,
-      gameState: mainMarket.GameState || 'PRE_MATCH',
+      gameState: mainMarket.GameState || 'NS',
       isLive,
+      bookmaker: mainMarket.Bookmaker ?? null,
       probabilities,
+      markets,
     };
+  }
+
+  public static parseLiveOdds(payloads: RawOddsPayload[]): NormalizedMatchState {
+    return TxLineDataParser.parseOddsPayloads(payloads);
   }
 }

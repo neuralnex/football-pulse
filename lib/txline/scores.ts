@@ -1,6 +1,8 @@
-import axios from 'axios';
 import { withFreshSession } from '@/lib/txline/singleton';
 import { apiBaseUrl } from '@/lib/txline/config';
+import { txlineCache } from '@/lib/infra/ttlCache';
+import { LOAD_CONFIG } from '@/lib/infra/loadConfig';
+import { txlineHttp } from '@/lib/txline/http';
 
 export interface SoccerScore {
   Goals: number;
@@ -13,6 +15,7 @@ export interface SoccerData {
   Action: string;
   Goal?: boolean;
   Penalty?: boolean;
+  Corner?: boolean;
   PlayerId?: number;
   Minutes?: number;
   Type?: string;
@@ -20,6 +23,7 @@ export interface SoccerData {
   YellowCard?: boolean;
   VAR?: boolean;
   Color?: string;
+  GoalType?: unknown;
 }
 
 export interface PlayerData {
@@ -93,6 +97,12 @@ export interface ScoreSnapshot {
 }
 
 export async function getScoreSnapshot(fixtureId: number, asOf?: number) {
+  const key = `scores:snapshot:${fixtureId}:${asOf ?? 'live'}`;
+  const ttl = asOf ? LOAD_CONFIG.cache.scoreHistorical : LOAD_CONFIG.cache.scoreSnapshot;
+  return txlineCache.getOrSet(key, ttl, () => fetchScoreSnapshot(fixtureId, asOf));
+}
+
+async function fetchScoreSnapshot(fixtureId: number, asOf?: number) {
   const queryParams = new URLSearchParams();
   if (asOf !== undefined) {
     queryParams.set('asOf', String(asOf));
@@ -100,16 +110,23 @@ export async function getScoreSnapshot(fixtureId: number, asOf?: number) {
 
   return withFreshSession(async (headers) => {
     const url = `${apiBaseUrl}/scores/snapshot/${fixtureId}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await axios.get<ScoreSnapshot[]>(url, { headers });
+    const response = await txlineHttp.get<ScoreSnapshot[]>(url, { headers });
     return response.data;
   });
 }
 
 export async function getScoreUpdates(fixtureId: number) {
+  const key = `scores:updates:${fixtureId}`;
+  return txlineCache.getOrSet(key, LOAD_CONFIG.cache.scoreUpdates, () =>
+    fetchScoreUpdates(fixtureId)
+  );
+}
+
+async function fetchScoreUpdates(fixtureId: number) {
   return withFreshSession(async (headers) => {
     const url = `${apiBaseUrl}/scores/updates/${fixtureId}`;
-    const response = await axios.get<ScoreSnapshot[]>(url, { headers });
-    // TxLINE may return SSE-style text (data: {...}\n event: ...).
+    const response = await txlineHttp.get<ScoreSnapshot[] | string>(url, { headers });
+
     if (typeof response.data === 'string') {
       const text: string = response.data;
       const matches = Array.from(text.matchAll(/^data:\s*(\{[\s\S]*?\})(?:\r?\n|$)/gm)).map(m=>m[1]);
@@ -125,9 +142,16 @@ export async function getScoreUpdates(fixtureId: number) {
 }
 
 export async function getScoreHistorical(fixtureId: number) {
+  const key = `scores:historical:${fixtureId}`;
+  return txlineCache.getOrSet(key, LOAD_CONFIG.cache.scoreHistorical, () =>
+    fetchScoreHistorical(fixtureId)
+  );
+}
+
+async function fetchScoreHistorical(fixtureId: number) {
   return withFreshSession(async (headers) => {
     const url = `${apiBaseUrl}/scores/historical/${fixtureId}`;
-    const response = await axios.get<ScoreSnapshot[]>(url, { headers });
+    const response = await txlineHttp.get<ScoreSnapshot[] | string>(url, { headers });
     if (typeof response.data === 'string') {
       const text: string = response.data;
       const matches = Array.from(text.matchAll(/^data:\s*(\{[\s\S]*?\})(?:\r?\n|$)/gm)).map(m=>m[1]);
@@ -154,7 +178,7 @@ export async function getScoreUpdatesInterval(
     const url = `${apiBaseUrl}/scores/updates/${epochDay}/${hourOfDay}/${interval}${
       queryParams.toString() ? `?${queryParams.toString()}` : ''
     }`;
-    const response = await axios.get<ScoreSnapshot[]>(url, { headers });
+    const response = await txlineHttp.get<ScoreSnapshot[]>(url, { headers });
     return response.data;
   });
 }
@@ -178,14 +202,11 @@ export async function getScoreStatValidation(options: ScoreStatValidationOptions
     const url = `${apiBaseUrl}/scores/stat-validation${
       queryParams.toString() ? `?${queryParams.toString()}` : ''
     }`;
-    const response = await axios.get<any>(url, { headers });
+    const response = await txlineHttp.get<any>(url, { headers });
     return response.data;
   });
 }
 
-/**
- * Extract current score totals for both teams
- */
 export function getCurrentScore(score?: ScoreSnapshot) {
   if (!score?.scoreSoccer) return { home: 0, away: 0 };
   const home = score.scoreSoccer.Participant1.Total?.Goals ?? 0;
@@ -193,9 +214,6 @@ export function getCurrentScore(score?: ScoreSnapshot) {
   return { home, away };
 }
 
-/**
- * Extract aggregate stats for both teams
- */
 export function getMatchStats(score?: ScoreSnapshot) {
   if (!score?.stats) return null;
   return {
@@ -205,25 +223,22 @@ export function getMatchStats(score?: ScoreSnapshot) {
   };
 }
 
-/**
- * Extract team lineups and formation
- */
 export function getTeamLineups(score?: ScoreSnapshot) {
-  if (!score?.lineups) return { home: [], away: [] };
-  
+  if (!score?.lineups || score.lineups.length === 0) return { home: [], away: [] };
+
+  const [first, second] = score.lineups;
+  if (score.participant1IsHome) {
+    return {
+      home: first?.lineups ?? [],
+      away: second?.lineups ?? [],
+    };
+  }
   return {
-    home: score.lineups
-      .filter((team) => team.lineups?.some((p) => p.starter))
-      .flatMap((team) => team.lineups?.filter((p) => p.starter) ?? []) ?? [],
-    away: score.lineups
-      .filter((team) => team.lineups?.some((p) => !p.starter))
-      .flatMap((team) => team.lineups?.filter((p) => !p.starter) ?? []) ?? [],
+    home: second?.lineups ?? [],
+    away: first?.lineups ?? [],
   };
 }
 
-/**
- * Format stats for display
- */
 export function formatStats(stats: Record<string, number>) {
   const keyMap: Record<string, string> = {
     shots: 'Shots',

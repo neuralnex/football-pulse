@@ -1,172 +1,250 @@
-// app/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { FixtureSnapshot } from '@/lib/txline/fixtures';
+import { useState, useEffect, useMemo } from 'react';
+import { BOARD_TIMEZONE, getEpochDay } from '@/lib/txline/dates';
 
-const MAX_FIXTURES = 12;
-
-// No demo fixtures — only World Cup fixtures are shown. Use empty fallback.
-const FALLBACK_FIXTURES: FixtureSnapshot[] = [];
-
-const LAGOS_TIMEZONE = 'Africa/Lagos';
-
-function getEpochDay(date: Date): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: LAGOS_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-
-  const year = Number(parts.find((part) => part.type === 'year')?.value ?? 0);
-  const month = Number(parts.find((part) => part.type === 'month')?.value ?? 1);
-  const day = Number(parts.find((part) => part.type === 'day')?.value ?? 1);
-
-  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
-}
-
-function formatDate(epochDay: number): string {
+function formatDayLabel(epochDay: number, today: number): string {
+  if (epochDay === today) return 'Today';
+  if (epochDay === today - 1) return 'Yesterday';
+  if (epochDay === today + 1) return 'Tomorrow';
   const ms = epochDay * 86400000;
-  const date = new Date(ms);
-  return date.toLocaleDateString('en-GB', {
-    timeZone: LAGOS_TIMEZONE,
+  return new Date(ms).toLocaleDateString('en-GB', {
+    timeZone: BOARD_TIMEZONE,
     weekday: 'short',
     month: 'short',
     day: 'numeric',
   });
 }
 
-function isLiveFixture(fixture: FixtureSnapshot): boolean {
-  const now = Date.now();
-  return fixture.StartTime <= now;
+function formatKickoff(ts: number): string {
+  return new Date(ts).toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: BOARD_TIMEZONE,
+  });
+}
+
+interface BoardFixture {
+  FixtureId: number;
+  Competition: string;
+  StartTime: number;
+  homeTeam: string;
+  awayTeam: string;
+  status: 'upcoming' | 'live' | 'finished';
+  gameStateLabel: string;
+  minute: string;
+  scoreHome: number | null;
+  scoreAway: number | null;
+  isPulse: boolean;
 }
 
 export default function HomePage() {
-  const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [fixtures, setFixtures] = useState<FixtureSnapshot[]>(FALLBACK_FIXTURES);
+  const today = useMemo(() => getEpochDay(new Date()), []);
+  const [selectedDay, setSelectedDay] = useState(today);
+  const [fixtures, setFixtures] = useState<BoardFixture[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
-    const today = getEpochDay(new Date());
-    setSelectedDay(today);
-  }, []);
-
-  useEffect(() => {
-    if (selectedDay === null) return;
-
     setLoading(true);
     const controller = new AbortController();
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let backoffMs = 0;
 
-    (async () => {
+    const loadBoard = async (showLoading = false) => {
+      if (showLoading) setLoading(true);
       try {
-        const response = await fetch(`/api/fixtures?epochDay=${selectedDay}`, { signal: controller.signal });
-        if (!response.ok) throw new Error('Failed to fetch fixtures');
-        const data = await response.json();
-        // Only surface World Cup fixtures for this product
-        const worldCup = data.filter((f: any) => /world cup/i.test(String(f.Competition || '')));
-        setFixtures(worldCup);
-      } catch (err) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          console.warn('[home] failed to load fixtures, using fallback', err);
-          setFixtures(FALLBACK_FIXTURES);
+        const res = await fetch(`/api/fixtures/board?epochDay=${selectedDay}`, {
+          signal: controller.signal,
+        });
+        if (res.status === 429) {
+          const retryAfter = Number(res.headers.get('Retry-After') || '30');
+          backoffMs = Math.min(retryAfter * 1000, 120_000);
+          return;
         }
+        backoffMs = 0;
+        if (res.ok) setFixtures(await res.json());
+      } catch (err) {
+        if ((err as Error)?.name !== 'AbortError') setFixtures([]);
       } finally {
-        setLoading(false);
+        if (showLoading) setLoading(false);
       }
-    })();
+    };
 
-    return () => controller.abort();
+    void loadBoard(true);
+
+    const scheduleRefresh = () => {
+      const jitter = Math.floor(Math.random() * 10_000);
+      const base = 45_000 + jitter + backoffMs;
+      refreshTimer = setTimeout(() => {
+        void loadBoard(false).finally(scheduleRefresh);
+      }, base);
+    };
+    scheduleRefresh();
+
+    return () => {
+      controller.abort();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
   }, [selectedDay]);
 
-  const dayBefore = selectedDay ? selectedDay - 1 : null;
-  const dayAfter = selectedDay ? selectedDay + 1 : null;
-  const today = getEpochDay(new Date());
+  const filtered = fixtures.filter((f) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return f.homeTeam.toLowerCase().includes(q) || f.awayTeam.toLowerCase().includes(q);
+  });
 
-  const sortedFixtures = [...fixtures].sort((a, b) => a.StartTime - b.StartTime);
+  const liveCount = fixtures.filter((f) => f.status === 'live').length;
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-50 px-4 py-10 md:px-8 lg:px-14">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="font-[var(--font-display)] text-4xl sm:text-5xl mb-2">FOOTBALL PULSE</h1>
-        <p className="text-neutral-400 mb-10">Live World Cup action made simple: scores, plays, and story updates in one place.</p>
+    <div className="min-h-screen bg-[var(--bg)]">
+      <header className="sticky top-0 z-30 border-b border-[var(--hairline)] bg-[var(--bg)]/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4">
+          <h1 className="font-display-var text-3xl tracking-wide">
+            Football<span className="gold-gradient-text">Pulse</span>
+          </h1>
+          <div className="hidden sm:flex flex-1 max-w-xs">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search teams…"
+              className="w-full rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 py-2 text-sm text-[var(--floodlight)] placeholder:text-[var(--muted)] outline-none focus:border-[var(--gold)]"
+            />
+          </div>
+          {liveCount > 0 && (
+            <span className="flex items-center gap-2 rounded-full border border-[var(--gold)]/30 bg-[var(--gold-dim)] px-3 py-1 text-xs font-medium text-[var(--gold)]">
+              <span className="pulse-live h-2 w-2 rounded-full bg-[var(--pulse)]" />
+              {liveCount} live
+            </span>
+          )}
+        </div>
 
-        {selectedDay !== null && (
-          <div className="mb-8">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                onClick={() => dayBefore !== null && setSelectedDay(dayBefore)}
-                className="px-4 py-2 rounded-md border border-neutral-800 bg-neutral-900 text-neutral-100 text-xs font-[var(--font-mono)] tracking-[0.18em] hover:border-pulse hover:text-pulse transition"
-              >
-                ← PREV
-              </button>
+        <div className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto px-4 pb-3">
+          {Array.from({ length: 18 }, (_, i) => today - 14 + i).map((day) => (
+            <button
+              key={day}
+              onClick={() => setSelectedDay(day)}
+              className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition ${
+                selectedDay === day
+                  ? 'bg-[var(--gold)] text-[var(--bg)]'
+                  : 'text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--floodlight)]'
+              }`}
+            >
+              {formatDayLabel(day, today)}
+            </button>
+          ))}
+          <button
+            onClick={() => setSelectedDay((d) => d - 1)}
+            className="ml-auto shrink-0 rounded-lg px-3 py-2 text-xs text-[var(--muted)] hover:text-[var(--gold)]"
+          >
+            ← Earlier
+          </button>
+          <button
+            onClick={() => setSelectedDay((d) => d + 1)}
+            className="shrink-0 rounded-lg px-3 py-2 text-xs text-[var(--muted)] hover:text-[var(--gold)]"
+          >
+            Later →
+          </button>
+        </div>
+      </header>
 
-              <div className="text-center">
-                <div className="text-xs font-[var(--font-mono)] text-neutral-400">
-                  {formatDate(selectedDay)}
-                </div>
-                {selectedDay === today && (
-                  <div className="text-[11px] font-[var(--font-mono)] text-[var(--pulse)] mt-1 tracking-[0.24em] uppercase">
-                    TODAY
-                  </div>
-                )}
-              </div>
+      <main className="mx-auto max-w-5xl px-4 py-6">
+        <p className="mb-6 text-sm text-[var(--muted)]">
+          Live matches get the full Pulse experience — AI summaries, odds, and chat. Tap any match to
+          explore scores and events.
+        </p>
 
-              <button
-                onClick={() => dayAfter !== null && setSelectedDay(dayAfter)}
-                className="px-4 py-2 rounded-md border border-neutral-800 bg-neutral-900 text-neutral-100 text-xs font-[var(--font-mono)] tracking-[0.18em] hover:border-pulse hover:text-pulse transition"
-              >
-                NEXT →
-              </button>
-            </div>
+        {loading && (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="match-card h-28 animate-pulse bg-[var(--surface)]" />
+            ))}
           </div>
         )}
 
-        <div className="flex flex-col gap-4">
-          {loading && <p className="text-neutral-400 text-sm">Loading fixtures…</p>}
-          {!loading && sortedFixtures.length === 0 && (
-            <p className="text-neutral-400 text-sm">No fixtures for this day.</p>
-          )}
+        {!loading && filtered.length === 0 && (
+          <div className="match-card p-10 text-center">
+            <p className="text-[var(--muted)]">No World Cup fixtures for this day.</p>
+          </div>
+        )}
 
+        <div className="space-y-3">
           {!loading &&
-            sortedFixtures.slice(0, MAX_FIXTURES).map((fixture) => {
-              const home = fixture.Participant1IsHome ? fixture.Participant1 : fixture.Participant2;
-              const away = fixture.Participant1IsHome ? fixture.Participant2 : fixture.Participant1;
-              const isLive = isLiveFixture(fixture);
-              const startDate = new Date(fixture.StartTime);
-              const timeStr = startDate.toLocaleTimeString('en-GB', {
-                hour: '2-digit',
-                minute: '2-digit',
-                timeZone: LAGOS_TIMEZONE,
-              });
-
-              return (
-                <a
-                  key={fixture.FixtureId}
-                  href={`/match/${fixture.FixtureId}?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}`}
-                  className={`block rounded-3xl border bg-[var(--surface)] p-5 text-neutral-50 transition ${isLive ? 'border-2 border-pulse shadow-[0_0_0_1px_rgba(255,68,51,0.3)]' : 'border border-neutral-800 hover:border-pulse'}`}
-                >
-                  {isLive && (
-                    <div className="absolute right-4 top-4 inline-flex items-center gap-2 rounded-full border border-[var(--hairline)] bg-black/30 px-3 py-1 text-[10px] font-[var(--font-mono)] uppercase tracking-[0.24em] text-[var(--pulse)]">
-                      <span className="h-2.5 w-2.5 rounded-full bg-[var(--pulse)]" />
-                      LIVE
-                    </div>
-                  )}
-                  <span className="text-[var(--muted)] text-xs font-[var(--font-mono)]">
-                    {fixture.Competition} · {timeStr}
-                  </span>
-                  <div className="mt-3 text-2xl font-[var(--font-display)]">
-                    {home} vs {away}
-                  </div>
-                </a>
-              );
-            })}
+            filtered.map((fixture) => (
+              <MatchCard key={fixture.FixtureId} fixture={fixture} />
+            ))}
         </div>
+      </main>
+    </div>
+  );
+}
 
-        <p className="mt-10 text-sm text-neutral-500">
-          Click a match to open live play-by-play, score updates, and easy-to-follow insights.
+function MatchCard({ fixture }: { fixture: BoardFixture }) {
+  const href = `/fixture/${fixture.FixtureId}?home=${encodeURIComponent(fixture.homeTeam)}&away=${encodeURIComponent(fixture.awayTeam)}`;
+
+  const statusBadge = () => {
+    if (fixture.status === 'live') {
+      return (
+        <span className="flex items-center gap-2 font-display-var text-lg text-[var(--gold)]">
+          <span className="pulse-live inline-block h-2.5 w-2.5 rounded-full bg-[var(--pulse)]" />
+          {fixture.minute}
+        </span>
+      );
+    }
+    if (fixture.status === 'finished') {
+      return <span className="text-sm font-medium text-[var(--muted)]">FT</span>;
+    }
+    return <span className="text-sm text-[var(--muted)]">{formatKickoff(fixture.StartTime)}</span>;
+  };
+
+  const scoreDisplay = () => {
+    if (fixture.scoreHome != null && fixture.scoreAway != null) {
+      return (
+        <span className="font-display-var text-4xl font-semibold tracking-wider text-[var(--floodlight)]">
+          {fixture.scoreHome} <span className="text-[var(--muted)]">-</span> {fixture.scoreAway}
+        </span>
+      );
+    }
+    return <span className="font-display-var text-2xl text-[var(--muted)]">vs</span>;
+  };
+
+  return (
+    <a
+      href={href}
+      className={`match-card block p-5 ${fixture.isPulse ? 'match-card-live' : ''}`}
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-xs uppercase tracking-wider text-[var(--muted)]">
+          {fixture.Competition}
+        </span>
+        <div className="flex items-center gap-3">
+          {fixture.isPulse && (
+            <span className="rounded-full bg-[var(--gold-dim)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-[var(--gold)]">
+              Pulse
+            </span>
+          )}
+          {statusBadge()}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+        <p className="truncate text-right font-heading-var text-base font-semibold sm:text-lg">
+          {fixture.homeTeam}
+        </p>
+        {scoreDisplay()}
+        <p className="truncate font-heading-var text-base font-semibold sm:text-lg">
+          {fixture.awayTeam}
         </p>
       </div>
-    </main>
+
+      {fixture.status === 'finished' && (
+        <p className="mt-3 text-center text-xs text-[var(--muted)]">
+          {fixture.gameStateLabel} · tap to view match archive
+        </p>
+      )}
+      {fixture.status === 'upcoming' && (
+        <p className="mt-3 text-center text-xs text-[var(--muted)]">Kickoff {formatKickoff(fixture.StartTime)}</p>
+      )}
+    </a>
   );
 }
