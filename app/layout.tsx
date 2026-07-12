@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'FootyPartner',
-  description: 'Live World Cup match companion powered by TxLINE.',
+  title: 'FootyPartner — FIFA World Cup 2026',
+  description: 'Live World Cup match companion with flags, scores, AI summaries, and odds powered by TxLINE.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

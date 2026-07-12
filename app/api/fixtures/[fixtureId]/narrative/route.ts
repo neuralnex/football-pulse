@@ -6,6 +6,8 @@ import { TxLineDataParser, RawOddsPayload, NormalizedMatchState } from '@/lib/tx
 import { apiBaseUrl } from '@/lib/txline/config';
 import { FootyPartnerNarrativeEngine } from '@/lib/ai/narrativeEngine';
 import { getFixtureById } from '@/lib/txline/fixtures';
+import { resolveMatchData } from '@/lib/match/resolveMatchData';
+import { getEpochDay } from '@/lib/txline/dates';
 
 export async function GET(
   request: NextRequest,
@@ -27,16 +29,47 @@ export async function GET(
   const awayTeam = fixture.Participant1IsHome ? fixture.Participant2 : fixture.Participant1;
 
   try {
-    const normalized: NormalizedMatchState = await withFreshSession(async (headers) => {
-      const oddsResponse = await axios.get<RawOddsPayload[]>(
-        `${apiBaseUrl}/odds/updates/${fixtureIdNum}`,
-        { headers }
-      );
-      return TxLineDataParser.parseLiveOdds(oddsResponse.data);
+    // Resolve match data to get odds (works for both live and archive matches)
+    const resolved = await resolveMatchData(fixtureIdNum, {
+      startTimeMs: fixture.StartTime,
+      competition: fixture.Competition ?? 'World Cup',
+      homeTeam,
+      awayTeam,
+      participant1IsHome: fixture.Participant1IsHome ?? true,
+      epochDay: fixture.StartTime ? getEpochDay(new Date(fixture.StartTime)) : undefined,
+      fetchOdds: true,
     });
 
+    let normalized: NormalizedMatchState | null = null;
+
+    if (resolved.odds) {
+      normalized = resolved.odds;
+    } else {
+      // Fallback: try live odds endpoint
+      normalized = await withFreshSession(async (headers) => {
+        const oddsResponse = await axios.get<RawOddsPayload[]>(
+          `${apiBaseUrl}/odds/updates/${fixtureIdNum}`,
+          { headers }
+        );
+        return TxLineDataParser.parseLiveOdds(oddsResponse.data);
+      });
+    }
+
+    if (!normalized) {
+      return NextResponse.json(
+        { error: 'No odds data available for this fixture.' },
+        { status: 404 }
+      );
+    }
+
     const narrativeEngine = new FootyPartnerNarrativeEngine();
-    const narrative = await narrativeEngine.generateNarrative(normalized, homeTeam, awayTeam);
+    const narrative = await narrativeEngine.generateNarrative(normalized, homeTeam, awayTeam, {
+      currentScore: resolved.latest ? {
+        home: resolved.latest.scoreSoccer?.Participant1?.Total?.Goals ?? 0,
+        away: resolved.latest.scoreSoccer?.Participant2?.Total?.Goals ?? 0,
+      } : undefined,
+      stats: resolved.latest?.stats,
+    });
 
     return NextResponse.json({ state: normalized, narrative });
   } catch (err) {

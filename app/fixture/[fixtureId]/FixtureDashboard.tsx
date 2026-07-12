@@ -9,6 +9,7 @@ import {
   type MatchScoreline,
   scoreFromSnapshot,
 } from '@/lib/txline/gameState';
+import MatchDisplayHeader from '@/components/MatchDisplayHeader';
 import { formatKickoffDual, DEFAULT_USER_TIMEZONE, resolveUserTimeZone } from '@/lib/txline/dates';
 import type { ScoreSnapshot } from '@/lib/txline/scores';
 
@@ -345,100 +346,61 @@ export default function FixtureDashboard({
   };
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--floodlight)]">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
       <div className="mx-auto max-w-4xl px-4 py-6 pb-24">
-        <a href="/" className="mb-4 inline-flex text-sm text-[var(--muted)] hover:text-[var(--gold)]">
+        <a
+          href="/"
+          className="mb-5 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-light)] px-4 py-2 text-sm font-semibold text-[var(--text)] transition hover:bg-[var(--border)]"
+        >
           ← All matches
         </a>
 
-        <header className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted)]">
-              {isPulse ? (
-                <span className="text-[var(--gold)]">● Live</span>
-              ) : (
-                'Match archive'
-              )}
+        <MatchDisplayHeader
+          className="mb-6"
+          homeTeam={homeTeam}
+          awayTeam={awayTeam}
+          scoreHome={currentScore?.home}
+          scoreAway={currentScore?.away}
+          isPulse={isPulse}
+          minute={matchMinute}
+          statusLabel={
+            !isPulse ? gameState || (dataLoaded ? 'Match archive' : 'Loading…') : undefined
+          }
+        >
+          {startTimeMs > 0 && (
+            <p className="mt-4 text-xs text-[var(--text-muted)]">
+              Kickoff {formatKickoffDual(startTimeMs, userTimeZone)}
             </p>
-            <h1 className="mt-1 font-display-var text-3xl sm:text-4xl tracking-wide">
-              {homeTeam} <span className="text-[var(--muted)]">vs</span> {awayTeam}
-            </h1>
-            {startTimeMs > 0 && (
-              <p className="mt-1 text-xs text-[var(--muted)]">Kickoff {formatKickoffDual(startTimeMs, userTimeZone)}</p>
-            )}
-          </div>
-          <div className="text-right">
-            {isPulse ? (
-              <div className="flex items-center justify-end gap-2">
-                <span className="pulse-live h-2.5 w-2.5 rounded-full bg-[var(--pulse)]" />
-                <span className="font-display-var text-xl text-[var(--gold)]">
-                  {connection === 'live' ? 'LIVE' : connection === 'error' ? '···' : '···'}
-                </span>
-              </div>
-            ) : (
-              <span className="text-sm text-[var(--muted)]">{gameState || 'Loading…'}</span>
-            )}
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              {isPulse ? gameState : dataLoaded ? 'Match archive' : 'Loading…'}
-            </p>
-          </div>
-        </header>
-
-        <section className={`match-card mb-4 p-5 ${isPulse ? 'match-card-live' : ''}`}>
-          {!dataLoaded ? (
-            <div className="animate-pulse space-y-4 py-6">
-              <div className="mx-auto h-12 w-32 rounded bg-[var(--surface)]" />
-              <div className="mx-auto h-4 w-48 rounded bg-[var(--surface)]" />
-            </div>
-          ) : (
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
-            <div>
-              <p className="truncate text-sm text-[var(--muted)]">{homeTeam}</p>
-              <p className="font-display-var text-5xl text-[var(--floodlight)]">
-                {currentScore ? currentScore.home : '–'}
-              </p>
-              {currentScore && (
-              <p className="mt-2 text-xs text-[var(--muted)]">
-                🟨 {currentScore.homeYellows} · 🟥 {currentScore.homeReds} · 🚩 {currentScore.homeCorners}
-              </p>
-              )}
-            </div>
-            <div className="px-2">
-              {isPulse ? (
-                <p className="pulse-live inline-flex items-center gap-2 font-display-var text-3xl text-[var(--gold)]">
-                  <span className="h-2 w-2 rounded-full bg-[var(--pulse)]" />
-                  {matchMinute || 'Live'}
-                </p>
-              ) : (
-                <p className="font-display-var text-2xl text-[var(--muted)]">
-                  {matchMinute || (matchStatus === 'upcoming' ? 'Soon' : '')}
-                </p>
-              )}
-            </div>
-            <div>
-              <p className="truncate text-sm text-[var(--muted)]">{awayTeam}</p>
-              <p className="font-display-var text-5xl text-[var(--floodlight)]">
-                {currentScore ? currentScore.away : '–'}
-              </p>
-              {currentScore && (
-              <p className="mt-2 text-xs text-[var(--muted)]">
-                🟨 {currentScore.awayYellows} · 🟥 {currentScore.awayReds} · 🚩 {currentScore.awayCorners}
-              </p>
-              )}
-            </div>
-          </div>
           )}
+
+          {currentScore && (
+            <div className="mt-5 flex justify-center gap-6 border-t border-[var(--border)] pt-5 text-xs text-[var(--text-muted)]">
+              <span>🟨 {currentScore.homeYellows} / {currentScore.awayYellows}</span>
+              <span>🟥 {currentScore.homeReds} / {currentScore.awayReds}</span>
+              <span>🚩 {currentScore.homeCorners} / {currentScore.awayCorners}</span>
+            </div>
+          )}
+
           {devnetNote && isPulse && (
-            <p className="mt-4 text-center text-xs text-[var(--gold)]">{devnetNote}</p>
+            <p className="mt-4 text-center text-xs text-[var(--accent)]">{devnetNote}</p>
           )}
-          {!isPulse && (
-            <p className="mt-4 text-center text-xs text-[var(--muted)]">
-              FootyPartner AI summaries and live odds are only available during live matches.
+          {!isPulse && dataLoaded && (
+            <p className="mt-4 text-center text-xs text-[var(--text-muted)]">
+              AI summaries and live odds are available during live matches.
             </p>
           )}
-        </section>
+        </MatchDisplayHeader>
 
-        <nav className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1">
+        {!dataLoaded && (
+          <section className="match-card mb-4 p-8">
+            <div className="animate-pulse space-y-4 py-4">
+              <div className="mx-auto h-12 w-32 rounded bg-[var(--surface-light)]" />
+              <div className="mx-auto h-4 w-48 rounded bg-[var(--surface-light)]" />
+            </div>
+          </section>
+        )}
+
+        <nav className="tab-nav mb-6">
           {(
             [
               ['summary', 'Summary'],
@@ -452,11 +414,7 @@ export default function FixtureDashboard({
             <button
               key={key}
               onClick={() => setTab(key as Tab)}
-              className={`flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
-                tab === key
-                  ? 'bg-[var(--gold)] text-[var(--bg)]'
-                  : 'text-[var(--muted)] hover:text-[var(--floodlight)]'
-              }`}
+              className={`tab-btn ${tab === key ? 'active' : ''}`}
             >
               {label}
             </button>
@@ -467,7 +425,7 @@ export default function FixtureDashboard({
           <div className="space-y-4">
             {(latestProbs || history.length > 0) && (
               <section className="match-card p-5">
-                <h2 className="mb-4 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+                <h2 className="mb-4 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
                   Win probability {oddsBookmaker ? `· ${oddsBookmaker}` : ''}
                 </h2>
                 <OddsBar
@@ -479,16 +437,16 @@ export default function FixtureDashboard({
             )}
 
             <section className="match-card p-5">
-              <h2 className="mb-4 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+              <h2 className="mb-4 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
                 {isPulse ? 'AI match summary' : 'Match summary'}
               </h2>
               {!isPulse && feed.length === 0 && (
-                <p className="text-sm text-[var(--muted)]">
+                <p className="text-sm text-[var(--text-muted)]">
                   Archive view — explore events and stats from this match. Live summaries appear during play.
                 </p>
               )}
               {isPulse && feed.length === 0 && (
-                <p className="text-sm text-[var(--muted)]">
+                <p className="text-sm text-[var(--text-muted)]">
                   Waiting for the first AI summary — odds and scores update live.
                 </p>
               )}
@@ -503,20 +461,20 @@ export default function FixtureDashboard({
 
         {tab === 'odds' && isPulse && (
           <section className="match-card p-5">
-            <h2 className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Live odds</h2>
+            <h2 className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Live odds</h2>
             {oddsBookmaker && (
-              <p className="mb-4 text-sm text-[var(--gold)]">Source: {oddsBookmaker}</p>
+              <p className="mb-4 text-sm text-[var(--accent)]">Source: {oddsBookmaker}</p>
             )}
             {oddsMarkets.length === 0 && !latestProbs ? (
-              <p className="text-sm text-[var(--muted)]">Odds syncing from TxLINE…</p>
+              <p className="text-sm text-[var(--text-muted)]">Odds syncing from TxLINE…</p>
             ) : (
               <div className="space-y-4">
                 {latestProbs && (
                   <OddsBar homeTeam={homeTeam} awayTeam={awayTeam} probs={latestProbs} />
                 )}
                 {oddsMarkets.map((market, i) => (
-                  <div key={i} className="rounded-xl border border-[var(--hairline)] bg-[var(--surface-raised)] p-4">
-                    <div className="mb-3 flex justify-between text-xs text-[var(--muted)]">
+                  <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--surface-light)] p-4">
+                    <div className="mb-3 flex justify-between text-xs text-[var(--text-muted)]">
                       <span>{market.bookmaker}</span>
                       <span>{market.marketPeriod} · {market.inRunning ? 'In-play' : 'Pre-match'}</span>
                     </div>
@@ -526,12 +484,12 @@ export default function FixtureDashboard({
                           key={sel.name}
                           className="rounded-lg bg-[var(--bg)] p-3 text-center"
                         >
-                          <p className="text-xs text-[var(--muted)]">{sel.name}</p>
-                          <p className="font-display-var text-2xl text-[var(--gold)]">
+                          <p className="text-xs text-[var(--text-muted)]">{sel.name}</p>
+                          <p className="text-2xl font-extrabold text-[var(--accent)]">
                             {sel.pct != null ? `${sel.pct.toFixed(1)}%` : '—'}
                           </p>
                           {sel.price != null && (
-                            <p className="text-[10px] text-[var(--muted)]">{sel.price}</p>
+                            <p className="text-[10px] text-[var(--text-muted)]">{sel.price}</p>
                           )}
                         </div>
                       ))}
@@ -544,20 +502,20 @@ export default function FixtureDashboard({
         )}
 
         {tab === 'events' && (
-          <section className="rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] p-5">
-            <h2 className="mb-4 text-xs font-mono-var uppercase tracking-[0.2em] text-[var(--muted)]">
-              Live events
+          <section className="match-card p-5">
+            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-[var(--text-muted)]">
+              Match events
             </h2>
             {scoreEvents.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">No events yet — the match may be about to kick off.</p>
+              <p className="text-sm text-[var(--text-muted)]">No events yet — the match may be about to kick off.</p>
             ) : (
               <div className="space-y-3">
                 {scoreEvents.map((event) => (
-                  <div
-                    key={event.seq}
-                    className="flex items-center gap-4 border-b border-[var(--hairline)] pb-3 last:border-0"
-                  >
-                    <span className="w-10 text-sm text-[var(--gold)]">{event.minute}</span>
+                  <div key={event.seq} className="event-item">
+                    <span className="min-w-[40px] text-sm font-bold text-[var(--accent)]">{event.minute}</span>
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-xs">
+                      ⚽
+                    </span>
                     <span className="text-sm">{event.action}</span>
                   </div>
                 ))}
@@ -567,21 +525,21 @@ export default function FixtureDashboard({
         )}
 
         {tab === 'stats' && (
-          <section className="rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] p-5">
-            <h2 className="mb-4 text-xs font-mono-var uppercase tracking-[0.2em] text-[var(--muted)]">
-              Match stats
+          <section className="match-card p-5">
+            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-[var(--text-muted)]">
+              Match statistics
             </h2>
             {matchStats.stats && Object.keys(matchStats.stats).length > 0 ? (
               <MatchStatsDisplay stats={matchStats} homeTeam={homeTeam} awayTeam={awayTeam} />
             ) : (
-              <p className="text-sm text-[var(--muted)]">Stats will appear once live coverage begins.</p>
+              <p className="text-sm text-[var(--text-muted)]">Stats will appear once live coverage begins.</p>
             )}
           </section>
         )}
 
         {tab === 'lineups' && (
-          <section className="rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] p-5">
-            <h2 className="mb-4 text-xs font-mono-var uppercase tracking-[0.2em] text-[var(--muted)]">
+          <section className="match-card p-5">
+            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-[var(--text-muted)]">
               Lineups
             </h2>
             {lineups.home.length > 0 || lineups.away.length > 0 ? (
@@ -590,15 +548,15 @@ export default function FixtureDashboard({
                 <LineupsDisplay title={awayTeam} players={lineups.away} />
               </div>
             ) : (
-              <p className="text-sm text-[var(--muted)]">Lineups not available yet.</p>
+              <p className="text-sm text-[var(--text-muted)]">Lineups not available yet.</p>
             )}
           </section>
         )}
 
         {tab === 'chat' && (
-          <section className="flex h-[min(70vh,560px)] flex-col rounded-2xl border border-[var(--hairline)] bg-[var(--surface)]">
-            <div className="border-b border-[var(--hairline)] px-5 py-3">
-              <h2 className="text-xs font-mono-var uppercase tracking-[0.2em] text-[var(--muted)]">
+          <section className="match-card flex h-[min(70vh,560px)] flex-col overflow-hidden p-0">
+            <div className="border-b border-[var(--border)] px-5 py-3">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--text-muted)]">
                 Ask about the match
               </h2>
             </div>
@@ -608,20 +566,20 @@ export default function FixtureDashboard({
                   key={i}
                   className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${
                     msg.role === 'user'
-                      ? 'ml-auto bg-[var(--gold)] text-[var(--bg)]'
-                      : 'mr-auto border border-[var(--hairline)] bg-[var(--surface-raised)]'
+                      ? 'ml-auto bg-[var(--accent)] text-white'
+                      : 'mr-auto border border-[var(--border)] bg-[var(--surface-light)]'
                   }`}
                 >
                   {msg.content}
                 </div>
               ))}
               {chatLoading && (
-                <p className="text-sm text-[var(--muted)]">Thinking…</p>
+                <p className="text-sm text-[var(--text-muted)]">Thinking…</p>
               )}
               <div ref={chatEndRef} />
             </div>
             <form
-              className="flex gap-2 border-t border-[var(--hairline)] p-4"
+              className="flex gap-2 border-t border-[var(--border)] p-4"
               onSubmit={(e) => {
                 e.preventDefault();
                 sendChat();
@@ -631,12 +589,12 @@ export default function FixtureDashboard({
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder="Who's winning? What just happened?"
-                className="flex-1 rounded-xl border border-[var(--hairline)] bg-[var(--bg)] px-4 py-3 text-sm outline-none focus:border-[var(--gold)]"
+                className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3 text-sm outline-none focus:border-[var(--accent)]"
               />
               <button
                 type="submit"
                 disabled={chatLoading || !chatInput.trim()}
-                className="rounded-xl bg-[var(--gold)] px-5 py-3 text-sm font-medium text-[var(--bg)] disabled:opacity-50"
+                className="rounded-xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
               >
                 Send
               </button>
@@ -662,31 +620,38 @@ function MatchStatsDisplay({
   return (
     <div className="space-y-6">
       {stats.possession !== undefined && (
-        <div>
-          <div className="mb-2 flex justify-between text-xs text-[var(--muted)]">
+        <div className="stat-row">
+          <div className="mb-2 flex justify-between text-sm font-semibold">
+            <span>{stats.possession}%</span>
+            <span className="text-[var(--text-muted)]">Possession</span>
+            <span>{100 - stats.possession}%</span>
+          </div>
+          <div className="stat-bar-bg">
+            <div className="stat-bar-left" style={{ width: `${stats.possession}%` }} />
+            <div className="stat-bar-right" style={{ width: `${100 - stats.possession}%` }} />
+          </div>
+          <div className="mt-2 flex justify-between text-xs text-[var(--text-muted)]">
             <span>{homeTeam}</span>
             <span>{awayTeam}</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-[var(--hairline)]">
-            <div
-              className="h-full rounded-full bg-[var(--gold)] transition-all"
-              style={{ width: `${stats.possession}%` }}
-            />
-          </div>
-          <p className="mt-2 text-center text-xs text-[var(--muted)]">
-            {homeTeam} {stats.possession}% possession
-            {stats.possessionType ? ` · ${stats.possessionType}` : ''}
-          </p>
         </div>
       )}
-      <div className="grid gap-2 sm:grid-cols-2">
-        {statKeys.map((key) => (
-          <div key={key} className="flex justify-between border-b border-[var(--hairline)] py-2 text-sm">
-            <span className="text-[var(--muted)]">{key}</span>
-            <span className="font-mono-var">{stats.stats?.[key] ?? 0}</span>
+      {statKeys.map((key) => {
+        const val = stats.stats?.[key] ?? 0;
+        const half = Math.max(val / 2, 1);
+        return (
+          <div key={key} className="stat-row">
+            <div className="mb-2 flex justify-between text-sm font-semibold">
+              <span>{val}</span>
+              <span className="text-xs text-[var(--text-muted)]">{key}</span>
+              <span>—</span>
+            </div>
+            <div className="stat-bar-bg">
+              <div className="stat-bar-left" style={{ width: `${Math.min(half, 100)}%` }} />
+            </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -708,11 +673,11 @@ function LineupsDisplay({
 
   return (
     <div>
-      <h3 className="mb-3 text-sm font-semibold text-[var(--gold)]">{title}</h3>
+      <h3 className="mb-3 text-sm font-semibold text-[var(--accent)]">{title}</h3>
       <div className="space-y-2">
         {starters.map((player) => (
           <div key={player.fixturePlayerId} className="flex items-center gap-3 text-sm">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--gold-dim)] text-xs text-[var(--gold)]">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-dim)] text-xs font-bold text-[var(--accent)]">
               {player.rosterNumber}
             </span>
             <span>{player.player.preferredName}</span>
@@ -721,11 +686,11 @@ function LineupsDisplay({
       </div>
       {subs.length > 0 && (
         <>
-          <p className="mb-2 mt-4 text-xs uppercase tracking-wider text-[var(--muted)]">Subs</p>
+          <p className="mb-2 mt-4 text-xs uppercase tracking-wider text-[var(--text-muted)]">Subs</p>
           <div className="space-y-2">
             {subs.map((player) => (
-              <div key={player.fixturePlayerId} className="flex items-center gap-3 text-sm text-[var(--muted)]">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--hairline)] font-mono-var text-xs">
+              <div key={player.fixturePlayerId} className="flex items-center gap-3 text-sm text-[var(--text-muted)]">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] text-xs">
                   {player.rosterNumber}
                 </span>
                 <span>{player.player.preferredName}</span>
@@ -749,10 +714,10 @@ function OddsBar({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex h-3 overflow-hidden rounded-full bg-[var(--hairline)]">
-        <div className="bg-[var(--gold)] transition-all" style={{ width: `${probs.home}%` }} />
-        <div className="bg-[var(--muted)] transition-all" style={{ width: `${probs.draw}%` }} />
-        <div className="bg-[var(--surface-raised)] transition-all" style={{ width: `${probs.away}%` }} />
+      <div className="flex h-3 overflow-hidden rounded-full bg-[var(--surface-light)]">
+        <div className="bg-[var(--accent)] transition-all" style={{ width: `${probs.home}%` }} />
+        <div className="bg-[var(--text-muted)] transition-all" style={{ width: `${probs.draw}%` }} />
+        <div className="bg-blue-500 transition-all" style={{ width: `${probs.away}%` }} />
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <ProbBadge label={homeTeam} value={probs.home} />
@@ -767,11 +732,11 @@ function ProbBadge({ label, value, muted }: { label: string; value: number; mute
   return (
     <div className="flex flex-col items-center gap-1 px-2">
       <span
-        className={`font-display-var text-2xl ${muted ? 'text-[var(--muted)]' : 'text-[var(--gold)]'}`}
+        className={`text-2xl font-extrabold ${muted ? 'text-[var(--text-muted)]' : 'text-[var(--accent)]'}`}
       >
         {value.toFixed(1)}%
       </span>
-      <span className="max-w-[90px] truncate text-center text-[10px] uppercase tracking-wider text-[var(--muted)]">
+      <span className="max-w-[90px] truncate text-center text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
         {label}
       </span>
     </div>
@@ -780,16 +745,16 @@ function ProbBadge({ label, value, muted }: { label: string; value: number; mute
 
 function FeedCard({ entry }: { entry: FeedEntry }) {
   return (
-    <article className="rounded-xl border border-[var(--hairline)] bg-[var(--surface-raised)] p-4">
-      <div className="mb-2 text-[11px] font-mono-var uppercase tracking-wider text-[var(--muted)]">
+    <article className="rounded-xl border border-[var(--border)] bg-[var(--surface-light)] p-4">
+      <div className="mb-2 text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
         {entry.time}
       </div>
       <p className="mb-3 text-base leading-7">{entry.narrative.matchPulse}</p>
-      <p className="mb-2 text-sm leading-6 text-[var(--muted)]">
-        <span className="text-[var(--gold)]">Why it matters — </span>
+      <p className="mb-2 text-sm leading-6 text-[var(--text-muted)]">
+        <span className="text-[var(--accent)]">Why it matters — </span>
         {entry.narrative.whyItMatters}
       </p>
-      <p className="text-sm leading-6 text-[var(--muted)]">
+      <p className="text-sm leading-6 text-[var(--text-muted)]">
         <span>What if — </span>
         {entry.narrative.whatIf}
       </p>
