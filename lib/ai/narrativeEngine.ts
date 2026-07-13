@@ -45,15 +45,68 @@ export class FootyPartnerNarrativeEngine {
     state: NormalizedMatchState,
     homeTeam: string,
     awayTeam: string,
-    matchData?: { currentScore?: { home: number; away: number }; stats?: any }
+    matchData?: {
+      currentScore?: { home: number; away: number };
+      stats?: any;
+      scoreDetails?: {
+        homeGoals: number;
+        awayGoals: number;
+        homeYellows: number;
+        awayYellows: number;
+        homeReds: number;
+        awayReds: number;
+        homeCorners: number;
+        awayCorners: number;
+      };
+      possession?: number;
+      detailedStats?: Record<string, number>;
+      recentEvents?: string[];
+    }
   ): Promise<NarrativeOutput> {
     const scoreInfo = matchData?.currentScore
       ? `Current score: ${homeTeam} ${matchData.currentScore.home} - ${matchData.currentScore.away} ${awayTeam}`
       : 'Current score: not available';
 
-    const statsInfo = matchData?.stats
-      ? `Match stats - Possession: ${matchData.stats.possession}%`
-      : '';
+    // Build detailed score info
+    let detailedScoreInfo = '';
+    if (matchData?.scoreDetails) {
+      const d = matchData.scoreDetails;
+      detailedScoreInfo = `Match details — ${homeTeam}: ${d.homeGoals} goals, ${d.homeYellows} yellow, ${d.homeReds} red, ${d.homeCorners} corners | ${awayTeam}: ${d.awayGoals} goals, ${d.awayYellows} yellow, ${d.awayReds} red, ${d.awayCorners} corners`;
+    }
+
+    // Build stats info
+    let statsInfo = '';
+    if (matchData?.possession !== undefined) {
+      statsInfo += `Possession: ${matchData.possession}% ${homeTeam} / ${100 - matchData.possession}% ${awayTeam}`;
+    }
+    if (matchData?.detailedStats && Object.keys(matchData.detailedStats).length > 0) {
+      const statLabels: Record<string, string> = {
+        shots: 'Shots',
+        shotsOnTarget: 'Shots on Target',
+        passes: 'Passes',
+        passAccuracy: 'Pass Accuracy %',
+        tackles: 'Tackles',
+        interceptions: 'Interceptions',
+        fouls: 'Fouls',
+        offsides: 'Offsides',
+        corners: 'Corners',
+        yellow: 'Yellow Cards',
+        red: 'Red Cards'
+      };
+      const statEntries = Object.entries(matchData.detailedStats)
+        .filter(([_, value]) => value > 0)
+        .map(([key, value]) => `${statLabels[key] || key}: ${value}`)
+        .slice(0, 8);
+      if (statEntries.length > 0) {
+        statsInfo += (statsInfo ? ' | ' : '') + `Stats: ${statEntries.join(', ')}`;
+      }
+    }
+
+    // Build events info
+    let eventsInfo = '';
+    if (matchData?.recentEvents && matchData.recentEvents.length > 0) {
+      eventsInfo = `Recent events: ${matchData.recentEvents.slice(-5).join('; ')}`;
+    }
 
     const prompt = `
 Match: ${homeTeam} vs ${awayTeam}
@@ -61,7 +114,9 @@ Fixture ID: ${state.fixtureId}
 Game state: ${state.gameState}
 Live: ${state.isLive}
 ${scoreInfo}
+${detailedScoreInfo}
 ${statsInfo}
+${eventsInfo}
 Win probabilities: ${
       state.probabilities
         ? `${homeTeam} ${state.probabilities.homeWin}% | Draw ${state.probabilities.draw}% | ${awayTeam} ${state.probabilities.awayWin}%`

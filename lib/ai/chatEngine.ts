@@ -47,31 +47,98 @@ export class FootyPartnerChatEngine {
   }
 
   private buildContextBlock(ctx: MatchChatContext): string {
-    const score = scoreFromSnapshot(ctx.latestScore);
-    const minute = formatMatchMinute(ctx.latestScore);
-    const state = formatMatchEndLabel(ctx.latestScore);
+      const score = scoreFromSnapshot(ctx.latestScore);
+      const minute = formatMatchMinute(ctx.latestScore);
+      const state = formatMatchEndLabel(ctx.latestScore);
+      
+      // Enhanced score details with cards, corners, etc.
+      const scoreDetails = ctx.latestScore?.scoreSoccer
+          ? this.formatDetailedScore(ctx.latestScore.scoreSoccer, ctx.homeTeam, ctx.awayTeam)
+          : 'Score details: not available yet';
 
-    const scoreLine = score
-      ? `Score: ${ctx.homeTeam} ${score.home} - ${score.away} ${ctx.awayTeam}`
-      : 'Score: not available yet';
+      const scoreLine = score
+          ? `Score: ${ctx.homeTeam} ${score.home} - ${score.away} ${ctx.awayTeam}`
+          : 'Score: not available yet';
 
-    const probs = ctx.odds?.probabilities
-      ? `Win chance — ${ctx.homeTeam} ${ctx.odds.probabilities.homeWin}%, Draw ${ctx.odds.probabilities.draw}%, ${ctx.awayTeam} ${ctx.odds.probabilities.awayWin}%`
-      : 'Win probabilities: not available yet';
+      const probs = ctx.odds?.probabilities
+          ? `Win chance — ${ctx.homeTeam} ${ctx.odds.probabilities.homeWin}%, Draw ${ctx.odds.probabilities.draw}%, ${ctx.awayTeam} ${ctx.odds.probabilities.awayWin}%`
+          : 'Win probabilities: not available yet';
 
-    const events =
-      ctx.recentEvents && ctx.recentEvents.length > 0
-        ? `Recent events:\n${ctx.recentEvents.map((e) => `- ${e}`).join('\n')}`
-        : 'Recent events: none logged yet';
+      // Enhanced stats and possession info
+      const statsInfo = ctx.latestScore?.stats || ctx.latestScore?.possession !== undefined
+          ? this.formatStatsAndPossession(ctx.latestScore)
+          : 'Match statistics: not available yet';
 
-    return `
+      const events =
+          ctx.recentEvents && ctx.recentEvents.length > 0
+              ? `Recent events:\n${ctx.recentEvents.map((e) => `- ${e}`).join('\n')}`
+              : 'Recent events: none logged yet';
+
+      return `
 Match: ${ctx.homeTeam} vs ${ctx.awayTeam}
 Fixture ID: ${ctx.fixtureId}
 ${scoreLine}
+${scoreDetails}
 Minute / phase: ${minute || 'pending'}${state ? ` (${state})` : ''}
 ${probs}
+${statsInfo}
 ${events}
 `.trim();
+  }
+  
+  private formatDetailedScore(scoreSoccer: any, homeTeam: string, awayTeam: string): string {
+      if (!scoreSoccer) return '';
+      
+      const getTotal = (team: 'Participant1' | 'Participant2') => {
+          const total = scoreSoccer[team]?.Total;
+          if (!total) return { goals: 0, yellows: 0, reds: 0, corners: 0 };
+          return {
+              goals: total.Goals ?? 0,
+              yellows: total.YellowCards ?? 0,
+              reds: total.RedCards ?? 0,
+              corners: total.Corners ?? 0
+          };
+      };
+      
+      const home = getTotal('Participant1');
+      const away = getTotal('Participant2');
+      
+      return `Details — ${homeTeam}: ${home.goals} goals, ${home.yellows} yellow, ${home.reds} red, ${home.corners} corners | ${awayTeam}: ${away.goals} goals, ${away.yellows} yellow, ${away.reds} red, ${away.corners} corners`;
+  }
+  
+  private formatStatsAndPossession(score: any): string {
+      const parts: string[] = [];
+      
+      if (score.possession !== undefined) {
+          parts.push(`Possession: ${score.possession}%`);
+      }
+      
+      if (score.stats && Object.keys(score.stats).length > 0) {
+          const statLabels: Record<string, string> = {
+              shots: 'Shots',
+              shotsOnTarget: 'Shots on Target',
+              passes: 'Passes',
+              passAccuracy: 'Pass Accuracy %',
+              tackles: 'Tackles',
+              interceptions: 'Interceptions',
+              fouls: 'Fouls',
+              offsides: 'Offsides',
+              corners: 'Corners',
+              yellow: 'Yellow Cards',
+              red: 'Red Cards'
+          };
+          
+          const statEntries = Object.entries(score.stats as Record<string, number>)
+              .filter(([_, value]) => value > 0)
+              .map(([key, value]) => `${statLabels[key] || key}: ${value}`)
+              .slice(0, 6); // Limit to avoid too much detail
+          
+          if (statEntries.length > 0) {
+              parts.push(`Stats: ${statEntries.join(', ')}`);
+          }
+      }
+      
+      return parts.length > 0 ? parts.join(' | ') : '';
   }
 
   async reply(messages: ChatMessage[], ctx: MatchChatContext): Promise<string> {

@@ -8,6 +8,7 @@ import { FootyPartnerNarrativeEngine } from '@/lib/ai/narrativeEngine';
 import { getFixtureById } from '@/lib/txline/fixtures';
 import { resolveMatchData } from '@/lib/match/resolveMatchData';
 import { getEpochDay } from '@/lib/txline/dates';
+import { describeScoreEvent } from '@/lib/txline/gameState';
 
 export async function GET(
   request: NextRequest,
@@ -62,13 +63,60 @@ export async function GET(
       );
     }
 
+    // Extract detailed match data for narrative
+    const latest = resolved.latest;
+    const history = resolved.history;
+    
+    // Build detailed score info
+    let scoreDetails: {
+      homeGoals: number;
+      awayGoals: number;
+      homeYellows: number;
+      awayYellows: number;
+      homeReds: number;
+      awayReds: number;
+      homeCorners: number;
+      awayCorners: number;
+    } | undefined;
+    
+    if (latest?.scoreSoccer) {
+      const p1 = latest.scoreSoccer.Participant1?.Total;
+      const p2 = latest.scoreSoccer.Participant2?.Total;
+      scoreDetails = {
+        homeGoals: p1?.Goals ?? 0,
+        awayGoals: p2?.Goals ?? 0,
+        homeYellows: p1?.YellowCards ?? 0,
+        awayYellows: p2?.YellowCards ?? 0,
+        homeReds: p1?.RedCards ?? 0,
+        awayReds: p2?.RedCards ?? 0,
+        homeCorners: p1?.Corners ?? 0,
+        awayCorners: p2?.Corners ?? 0,
+      };
+    }
+
+    // Build detailed stats
+    let detailedStats: Record<string, number> | undefined;
+    if (latest?.stats && Object.keys(latest.stats).length > 0) {
+      detailedStats = latest.stats;
+    }
+
+    // Build recent events
+    const recentEvents = history
+      .slice(-12)
+      .map((s) => describeScoreEvent(s))
+      .filter(Boolean);
+
     const narrativeEngine = new FootyPartnerNarrativeEngine();
     const narrative = await narrativeEngine.generateNarrative(normalized, homeTeam, awayTeam, {
-      currentScore: resolved.latest ? {
-        home: resolved.latest.scoreSoccer?.Participant1?.Total?.Goals ?? 0,
-        away: resolved.latest.scoreSoccer?.Participant2?.Total?.Goals ?? 0,
+      currentScore: latest ? {
+        home: latest.scoreSoccer?.Participant1?.Total?.Goals ?? 0,
+        away: latest.scoreSoccer?.Participant2?.Total?.Goals ?? 0,
       } : undefined,
-      stats: resolved.latest?.stats,
+      stats: latest?.stats,
+      scoreDetails,
+      possession: latest?.possession,
+      detailedStats,
+      recentEvents,
     });
 
     return NextResponse.json({ state: normalized, narrative });
